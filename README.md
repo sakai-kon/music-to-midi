@@ -1,89 +1,91 @@
 # Music to MIDI
 
-Spotify Basic Pitch を使って、音声ファイルからポリフォニック（和音を含む）MIDIを作るローカルWebアプリです。
+Spotify Basic Pitch の公式TypeScript版を使って、音声ファイルをブラウザ内でポリフォニックMIDIへ変換するWebアプリです。**GitHub Pagesで公開でき、PythonサーバーやAPIキーは不要です。**
+
+## Live site
+
+公開後のURL:
+
+https://sakai-kon.github.io/music-to-midi/
+
+GitHub Pagesの初回有効化が必要な場合は、リポジトリの **Settings → Pages → Build and deployment → Source → GitHub Actions** を選択してください。**main** へのpush後、Actionsのデプロイが成功すると公開されます。
 
 ## Features
 
-- MP3 / WAV / FLAC / M4A / OGG / AIFF をドラッグ＆ドロップまたはファイル選択で読み込み
-- Spotify Basic Pitch による複数音の推定
-- オンセット・音の長さ・ベロシティを含むMIDIを書き出し
-- 感度スライダー（オンセット／フレームのしきい値と最小音価に反映）
-- ノイズ低減スライダー
-- BPM自動推定または手動指定、拍子設定
-- ピアノロール表示、ブラウザ内プレビュー、MIDダウンロード
-- 音声ファイルはサーバーへ保存せず、一時ディレクトリで処理後に削除
+- MP3 / WAV / FLAC / M4A / OGG / AIFF の読み込み（実際にデコード可能な形式はブラウザに依存）
+- Spotify Basic Pitchによるポリフォニック音符推定
+- オンセット・音の長さ・ベロシティを含むMIDIノート
+- BPMの簡易自動推定または手動設定
+- 拍子、検出感度、簡易ノイズゲートの設定
+- ピアノロール、ブラウザ内サウンドプレビュー、MIDIダウンロード
+- 音声を外部サーバーへ送信しないローカル処理
+- モデルは初回に読み込まれ、同じブラウザではキャッシュが利用されます
 
-## Requirements
+## How it works
 
-- Python **3.10** 推奨
-- Windows 10/11、macOS、Ubuntu Linux
-- インターネット接続（初回のPythonパッケージ導入用）
-- 数分の音源を処理する場合は、十分なメモリとCPU時間
+1. ブラウザが音声ファイルを読み込み、モノラル化して22,050 Hzへリサンプリングします。
+2. TensorFlow.jsとSpotify Basic Pitchモデルをブラウザ内で実行します。
+3. 推定したフレーム・オンセット・ピッチ情報からノートイベントを作ります。
+4. MIDIファイルをブラウザ内で生成し、ダウンロードします。
 
-Basic Pitch のモデルと依存ライブラリは、初回実行時またはパッケージ導入時に取得されます。推論はローカルPC上で実行されます。
+音声ファイル本体はGitHubや外部APIへアップロードされません。GitHub PagesはHTML/JavaScript/モデルファイルの配信だけを行います。AIモデルは初回アクセス時にダウンロードされるため、その時点ではインターネット接続が必要です。
 
-## Setup
+## Run locally
 
-### Windows (PowerShell)
-
-~~~powershell
-py -3.10 -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-python -m uvicorn app:app --host 127.0.0.1 --port 8000
-~~~
-
-### macOS / Linux
+Node.js 20以上を推奨します。
 
 ~~~bash
-python3.10 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-python -m uvicorn app:app --host 127.0.0.1 --port 8000
+git clone https://github.com/sakai-kon/music-to-midi.git
+cd music-to-midi
+npm install
+npm run dev
 ~~~
 
-ブラウザで **http://127.0.0.1:8000** を開きます。
+表示されたローカルURL（通常は http://localhost:5173/）をブラウザで開きます。
 
-終了するときはターミナルで Ctrl + C を押してください。
+本番ビルドの確認:
 
-## How to use
+~~~bash
+npm run check
+npm run build
+npm run preview
+~~~
 
-1. 音源をドロップするか「ファイルを選択」を押します。
-2. BPMを自動検出するか、手動でBPMを指定します。
-3. 必要に応じて拍子、感度、ノイズ低減を調整します。
-4. 「MIDIに変換」を押します。長い音源や初回推論では数十秒以上かかる場合があります。
-5. ピアノロールとプレビューを確認し、「MIDIをダウンロード」を押します。
+npm run build はBasic Pitchのモデルファイルを public/models/ にコピーしてから、Viteで dist/ を生成します。
 
-## Accuracy notes
+## GitHub Pages deployment
 
-このアプリはSpotify Basic Pitchを使用します。Basic Pitchはポリフォニック音符推定に対応していますが、**どの音源でも完全・極めて正確に復元できるわけではありません**。公式説明でも、特に単一楽器に近い音源で良好に動作するとされています。複数楽器が重なった完成済みミックス、強い残響、歪み、ドラム、声や効果音が混在する音源では、誤検出・音抜け・音価のずれが生じることがあります。最終的な譜面や演奏データとして使う前に、DAWや譜面ソフトで確認してください。
+.github/workflows/pages.yml が main へのpushを検出し、次を自動実行します。
 
-感度を上げると小さな音や短い音を拾いやすくなりますが、誤検出も増えやすくなります。ノイズ低減も音色によっては弱い音を削るため、設定を変えて複数回比較するのがおすすめです。
+1. Node.jsのセットアップ
+2. npm依存パッケージのインストール
+3. JavaScript構文チェック
+4. Basic Pitchモデルを含む静的ビルド
+5. GitHub Pagesへのデプロイ
 
-## Limits and privacy
+Viteのbase pathは /music-to-midi/ に設定しています。ユーザー側にPythonやサーバーの起動は必要ありません。
 
-- アップロード上限: **50 MB**
-- 音源の長さ上限: **6分**
-- 音声データは変換処理用の一時ディレクトリにのみ書き込み、処理終了後に削除します。
-- デフォルトでは 127.0.0.1 だけで待ち受けます。インターネットに公開する設定にはしていません。
-- 公開サーバーに配置する場合は、認証、レート制限、ストレージ分離、HTTPS、長時間ジョブ管理などを追加してください。
+## Limits and accuracy
 
-## Tech stack
+- ファイルサイズ上限: 30 MB
+- 音源の長さ上限: 3分
+- 変換は端末のCPU/GPUと利用可能メモリに依存します。スマートフォンでは長い音源や多数のノートの処理に時間がかかることがあります。
+- 対応コーデックはブラウザの decodeAudioData 実装に依存します。読み込みに失敗する形式はWAVまたはMP3へ変換してからお試しください。
+- 自動BPMは波形のエネルギー変化から求める簡易推定です。複雑なリズムやテンポ変化がある曲は、手動設定を使ってください。
+- ノイズ低減は弱い音を抑える簡易ノイズゲートです。音源によっては弱いノートも小さくなるため、0%から調整してください。
+- Basic Pitchはポリフォニック推定に対応しますが、完成済みのフルミックス（複数楽器・ボーカル・ドラムが重なった音源）では誤検出や音抜けが発生することがあります。特に単一楽器に近い音源の方が良好な結果を得やすいモデルです。必要に応じてDAWで編集してください。
 
-- FastAPI / Uvicorn
-- Spotify Basic Pitch 0.4.0
-- librosa / noisereduce / soundfile
-- imageio-ffmpeg (音声デコード)
-- pretty_midi (MIDIデータ)
+## Dependencies
 
-## References
+- @spotify/basic-pitch 1.0.1 (Apache-2.0)
+- @tensorflow/tfjs 3.2.0
+- vite 6.4.1
+- Node.js 20+
 
-- Basic Pitch: https://github.com/spotify/basic-pitch
-- Basic Pitch inference API: https://github.com/spotify/basic-pitch/blob/main/basic_pitch/inference.py
-- FastAPI: https://fastapi.tiangolo.com/
+Basic Pitch: https://github.com/spotify/basic-pitch-ts
+Python Basic Pitch: https://github.com/spotify/basic-pitch
+Vite: https://vite.dev/
 
 ## License
 
-このリポジトリのアプリコードはMIT Licenseです。Basic Pitchおよび各依存パッケージは、それぞれのライセンスに従います。
+アプリ固有のコードはMIT Licenseです。Basic PitchはApache License 2.0で提供されています。各依存パッケージはそれぞれのライセンスに従います。
