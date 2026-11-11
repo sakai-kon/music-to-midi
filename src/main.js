@@ -633,6 +633,36 @@ function drawPianoRoll(result) {
     }
   }
 
+  // Repaint measure shading and beat lines above the key-row backgrounds.
+  for (let bar = 0; bar < barCount; bar++) {
+    const x = left + bar * barWidth;
+    if (bar % 2 === 1) {
+      ctx.fillStyle = "rgba(104, 121, 190, .035)";
+      ctx.fillRect(x, top, Math.max(0, Math.min(left + plotWidth, x + barWidth) - x), height - top - bottom);
+    }
+  }
+  for (let beat = 0; beat <= beatCount; beat++) {
+    const x = left + beat * beatSeconds * pixelsPerSecond;
+    if (x > left + plotWidth) break;
+    const isBar = beat % result.numerator === 0;
+    ctx.strokeStyle = isBar ? "rgba(76, 91, 132, .24)" : "rgba(76, 91, 132, .105)";
+    ctx.lineWidth = isBar ? 1.15 : 0.7;
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, height - bottom);
+    ctx.stroke();
+    if (beat < beatCount && barWidth > 36) {
+      const halfX = x + beatSeconds * pixelsPerSecond / 2;
+      ctx.strokeStyle = "rgba(76, 91, 132, .055)";
+      ctx.setLineDash([2, 4]);
+      ctx.beginPath();
+      ctx.moveTo(halfX, top);
+      ctx.lineTo(halfX, height - bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
   for (const note of notes) {
     if (!Number.isFinite(note.start) || !Number.isFinite(note.end) ||
         !Number.isFinite(note.pitch) || note.pitch < low || note.pitch > high) continue;
