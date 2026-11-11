@@ -7,7 +7,8 @@
     "dev": "node scripts/copy-model.mjs && vite --host 0.0.0.0",
     "build": "node scripts/copy-model.mjs && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "check": "node --check src/main.js"
+    "check": "node --check src/main.js",
+    "test": "node --test"
   },
   "dependencies": {
     "@spotify/basic-pitch": "1.0.1",
