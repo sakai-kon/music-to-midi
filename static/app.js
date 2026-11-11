@@ -22,8 +22,7 @@
   let latestResult = null;
   let audioContext = null;
   let activeOscillators = [];
-  let playheadFrame = null;
-  let playbackStartedAt = 0;
+  let playbackTimer = null;
 
   const maxBytes = 50 * 1024 * 1024;
   const maxDurationSeconds = 6 * 60;
@@ -63,6 +62,7 @@
   }
 
   function setFile(file) {
+    stopPreview();
     clearError();
     if (!file) return;
     const lowerName = file.name.toLowerCase();
@@ -94,6 +94,9 @@
   }
 
   function clearFile() {
+    stopPreview();
+    latestResult = null;
+    resultSection.classList.add("hidden");
     selectedFile = null;
     fileInput.value = "";
     byId("fileInfo").classList.add("hidden");
@@ -192,7 +195,7 @@
 
   function showResult(result) {
     byId("noteCount").textContent = Number(result.note_count || 0).toLocaleString("ja-JP");
-    byId("resultBpm").textContent = Number(result.bpm || 120).toFixed(1).replace(/\\.0$/, "");
+    byId("resultBpm").textContent = Number(result.bpm || 120).toFixed(1).replace(/\.0$/, "");
     byId("resultMeter").textContent = result.time_signature || "4/4";
     byId("resultDuration").textContent = formatTime(result.duration);
     byId("downloadFilename").textContent = result.filename || "transcription.mid";
@@ -298,7 +301,6 @@
     try {
       const context = await getAudioContext();
       const startAt = context.currentTime + 0.12;
-      playbackStartedAt = startAt;
       const master = context.createGain();
       master.gain.value = 0.72;
       master.connect(context.destination);
@@ -327,7 +329,7 @@
       byId("playButton").disabled = true;
       byId("stopButton").disabled = false;
       const totalMs = Math.max(0, (Number(latestResult.duration) + 0.3) * 1000);
-      window.setTimeout(() => {
+      playbackTimer = window.setTimeout(() => {
         if (activeOscillators.length) stopPreview();
       }, totalMs);
     } catch (error) {
@@ -341,8 +343,10 @@
       try { oscillator.disconnect(); } catch (_) { /* already disconnected */ }
     });
     activeOscillators = [];
-    if (playheadFrame) cancelAnimationFrame(playheadFrame);
-    playheadFrame = null;
+    if (playbackTimer) {
+      window.clearTimeout(playbackTimer);
+      playbackTimer = null;
+    }
     byId("playButton").disabled = !(latestResult && latestResult.notes && latestResult.notes.length);
     byId("stopButton").disabled = true;
   }
@@ -365,7 +369,7 @@
     document.body.appendChild(link);
     link.click();
     link.remove();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 
   window.addEventListener("resize", () => {
