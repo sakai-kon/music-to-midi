@@ -1,4 +1,5 @@
 import * as tf from "@tensorflow/tfjs";
+import { buildMidi, clamp, midiNoteName } from "./midi.js";
 import {
   BasicPitch,
   addPitchBendsToNoteEvents,
@@ -24,8 +25,8 @@ const MODEL_URL = new URL(
 ).href;
 
 let selectedFile = null;
+let isConverting = false;
 let selectedObjectUrl = null;
-let decodedPreviewAudio = null;
 let latestResult = null;
 let pitchModel = null;
 let audioContext = null;
@@ -54,7 +55,9 @@ function setProgress(percent, title, message) {
 }
 
 function setBusy(busy) {
+  isConverting = busy;
   convertButton.disabled = busy || !selectedFile;
+  $("heroSelectButton").disabled = busy;
   $("chooseFile").disabled = busy;
   $("removeFile").disabled = busy;
   $("convertButtonText").textContent = busy ? "解析しています..." : "MIDIに変換";
@@ -86,7 +89,7 @@ function safeStem(name) {
 }
 
 function setFile(file) {
-  if (!file) return;
+  if (!file || isConverting) return;
   clearError();
   stopPlayback();
 
@@ -183,7 +186,42 @@ $("tempoMode").addEventListener("change", () => {
   $("bpmInput").disabled = $("tempoMode").value !== "manual";
 });
 
+async function readMediaDuration(file) {
+  const objectUrl = URL.createObjectURL(file);
+  const media = new Audio();
+  media.preload = "metadata";
+
+  try {
+    return await new Promise((resolve) => {
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        resolve(value);
+      };
+      const timer = window.setTimeout(() => finish(null), 8000);
+      media.addEventListener("loadedmetadata", () => {
+        finish(Number.isFinite(media.duration) ? media.duration : null);
+      }, { once: true });
+      media.addEventListener("error", () => finish(null), { once: true });
+      media.src = objectUrl;
+      media.load();
+    });
+  } finally {
+    media.pause();
+    media.removeAttribute("src");
+    media.load();
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 async function decodeAndResample(file) {
+  const metadataDuration = await readMediaDuration(file);
+  if (metadataDuration !== null && metadataDuration > MAX_DURATION_SECONDS) {
+    throw new Error("音源は3分以内にしてください。");
+  }
+
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) {
     throw new Error("このブラウザはWeb Audio APIに対応していません。");
@@ -335,9 +373,13 @@ async function ensureModel() {
 
   modelLoadPromise = (async () => {
     setProgress(7, "AIモデルを準備しています", "初回はモデルのダウンロードに少し時間がかかります。");
+    const isIOSDevice =
+      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
     try {
-      const webglAvailable = await tf.setBackend("webgl");
-      if (!webglAvailable) await tf.setBackend("cpu");
+      const preferredBackend = isIOSDevice ? "cpu" : "webgl";
+      const backendAvailable = await tf.setBackend(preferredBackend);
+      if (!backendAvailable) await tf.setBackend("cpu");
     } catch {
       await tf.setBackend("cpu");
     }
@@ -357,31 +399,33 @@ async function ensureModel() {
   }
 }
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
 async function transcribe(samples, sensitivity) {
   const model = await ensureModel();
   const frames = [];
   const onsets = [];
   const contours = [];
-  await model.evaluateModel(
-    samples,
-    (frameChunk, onsetChunk, contourChunk) => {
-      frames.push(...frameChunk);
-      onsets.push(...onsetChunk);
-      contours.push(...contourChunk);
-    },
-    (fraction) => {
-      const pct = 18 + fraction * 76;
-      setProgress(
-        pct,
-        "ノートを推定しています",
-        "Basic Pitchが音の立ち上がり・高さ・持続時間を解析しています。"
-      );
-    }
-  );
+  const engine = tf.engine();
+  engine.startScope();
+  try {
+    await model.evaluateModel(
+      samples,
+      (frameChunk, onsetChunk, contourChunk) => {
+        frames.push(...frameChunk);
+        onsets.push(...onsetChunk);
+        contours.push(...contourChunk);
+      },
+      (fraction) => {
+        const pct = 18 + fraction * 76;
+        setProgress(
+          pct,
+          "ノートを推定しています",
+          "Basic Pitchが音の立ち上がり・高さ・持続時間を解析しています。"
+        );
+      }
+    );
+  } finally {
+    engine.endScope();
+  };
 
   const onsetThreshold = 0.68 - sensitivity * 0.004;
   const frameThreshold = 0.48 - sensitivity * 0.0025;
@@ -419,87 +463,6 @@ async function transcribe(samples, sensitivity) {
     .sort((a, b) => a.start - b.start || a.pitch - b.pitch);
 }
 
-function midiNoteName(pitch) {
-  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-  return names[pitch % 12] + (Math.floor(pitch / 12) - 1);
-}
-
-function encodeVariableLength(value) {
-  let buffer = value & 0x7f;
-  const bytes = [];
-  while ((value >>= 7) > 0) {
-    buffer <<= 8;
-    buffer |= ((value & 0x7f) | 0x80);
-  }
-  while (true) {
-    bytes.push(buffer & 0xff);
-    if (buffer & 0x80) buffer >>= 8;
-    else break;
-  }
-  return bytes;
-}
-
-function uint32(value) {
-  return [
-    (value >>> 24) & 255,
-    (value >>> 16) & 255,
-    (value >>> 8) & 255,
-    value & 255
-  ];
-}
-
-function buildMidi(notes, bpm, numerator, denominator) {
-  const ticksPerBeat = 480;
-  const ticksPerSecond = ticksPerBeat * bpm / 60;
-  const microsPerBeat = Math.round(60000000 / bpm);
-  const denominatorPower = Math.round(Math.log2(denominator));
-  const events = [
-    { tick: 0, priority: -2, bytes: [0xff, 0x51, 0x03,
-      (microsPerBeat >>> 16) & 255,
-      (microsPerBeat >>> 8) & 255,
-      microsPerBeat & 255] },
-    { tick: 0, priority: -1, bytes: [0xff, 0x58, 0x04, numerator, denominatorPower, 24, 8] }
-  ];
-
-  for (const note of notes) {
-    const startTick = Math.max(0, Math.round(note.start * ticksPerSecond));
-    const endTick = Math.max(startTick + 1, Math.round(note.end * ticksPerSecond));
-    events.push({
-      tick: startTick,
-      priority: 1,
-      bytes: [0x90, note.pitch, clamp(note.velocity, 1, 127)]
-    });
-    events.push({
-      tick: endTick,
-      priority: 0,
-      bytes: [0x80, note.pitch, 0]
-    });
-  }
-
-  events.sort((a, b) => a.tick - b.tick || a.priority - b.priority);
-  const track = [];
-  let previousTick = 0;
-  for (const event of events) {
-    const delta = Math.max(0, event.tick - previousTick);
-    track.push(...encodeVariableLength(delta), ...event.bytes);
-    previousTick = event.tick;
-  }
-  track.push(0x00, 0xff, 0x2f, 0x00);
-
-  const trackBytes = new Uint8Array(track);
-  const header = [
-    0x4d, 0x54, 0x68, 0x64,
-    0x00, 0x00, 0x00, 0x06,
-    0x00, 0x00,
-    0x00, 0x01,
-    (ticksPerBeat >>> 8) & 255,
-    ticksPerBeat & 255,
-    0x4d, 0x54, 0x72, 0x6b,
-    ...uint32(trackBytes.length)
-  ];
-  return new Blob([new Uint8Array(header), trackBytes], { type: "audio/midi" });
-}
-
 function drawPianoRoll(result) {
   const notes = result.notes;
   const rect = canvas.getBoundingClientRect();
@@ -521,9 +484,14 @@ function drawPianoRoll(result) {
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
   const duration = Math.max(1, result.duration);
-  const pitches = notes.map((note) => note.pitch);
-  const low = pitches.length ? Math.max(0, Math.min(...pitches) - 2) : 48;
-  const high = pitches.length ? Math.min(127, Math.max(...pitches) + 2) : 72;
+  let minPitch = 127;
+  let maxPitch = 0;
+  for (const note of notes) {
+    minPitch = Math.min(minPitch, note.pitch);
+    maxPitch = Math.max(maxPitch, note.pitch);
+  }
+  const low = notes.length ? Math.max(0, minPitch - 2) : 48;
+  const high = notes.length ? Math.min(127, maxPitch + 2) : 72;
   const span = Math.max(12, high - low + 1);
   const rowHeight = plotHeight / span;
 
@@ -583,11 +551,14 @@ function showResult(result) {
   $("stopButton").disabled = true;
   resultSection.classList.remove("hidden");
   drawPianoRoll(result);
-  resultSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  resultSection.scrollIntoView({
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    block: "start"
+  });
 }
 
 async function convert() {
-  if (!selectedFile) return;
+  if (!selectedFile || isConverting) return;
   clearError();
   stopPlayback();
   setBusy(true);
