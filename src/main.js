@@ -94,10 +94,12 @@ function setFile(file) {
   stopPlayback();
 
   if (file.size > MAX_FILE_BYTES) {
+    clearFile();
     setError("ファイルは30 MB以内にしてください。");
     return;
   }
   if (file.size === 0) {
+    clearFile();
     setError("空のファイルは選択できません。");
     return;
   }
@@ -105,6 +107,7 @@ function setFile(file) {
   const ext = file.name.toLowerCase().match(/\.[^.]+$/)?.[0] || "";
   const allowed = [".mp3", ".wav", ".flac", ".m4a", ".ogg", ".aiff", ".aif"];
   if (!allowed.includes(ext)) {
+    clearFile();
     setError("MP3 / WAV / FLAC / M4A / OGG / AIFFに対応しています。");
     return;
   }
@@ -343,7 +346,13 @@ function detectTempo(samples) {
     onset[i] = Math.max(0, envelope[i] - envelope[i - 1]);
   }
   const mean = onset.reduce((sum, value) => sum + value, 0) / onset.length;
-  for (let i = 0; i < onset.length; i++) onset[i] = Math.max(0, onset[i] - mean);
+  let noveltyEnergy = 0;
+  for (let i = 0; i < onset.length; i++) {
+    onset[i] = Math.max(0, onset[i] - mean);
+    noveltyEnergy += onset[i];
+  }
+  // Silence or a near-constant sustained tone has no reliable beat pulse.
+  if (noveltyEnergy < 1e-6) return 120;
 
   let bestBpm = 120;
   let bestScore = -Infinity;
