@@ -881,3 +881,156 @@ body {
     transform: none;
   }
 }
+
+
+/* Piano roll and instrument preview refinement */
+.piano-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: -2px 0 10px;
+}
+.zoom-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #777d8c;
+  font-size: 10px;
+}
+.zoom-controls > span { margin-right: 3px; }
+.zoom-controls button {
+  display: grid;
+  width: 29px;
+  height: 29px;
+  place-items: center;
+  border: 1px solid #e1e4ec;
+  border-radius: 9px;
+  background: #fff;
+  color: #343b4b;
+  font-size: 17px;
+  line-height: 1;
+  transition: background .2s ease, border-color .2s ease;
+}
+.zoom-controls button:hover { border-color: #b9c3e7; background: #f4f6ff; }
+.zoom-controls output {
+  min-width: 43px;
+  color: #46506a;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.zoom-controls .fit-button {
+  width: auto;
+  padding: 0 10px;
+  font-size: 10px;
+  font-weight: 650;
+}
+.piano-scroll-note { color: #a0a5b0; font-size: 9px; }
+.piano-wrap {
+  max-height: 620px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid #e7eaf1;
+  border-radius: 15px;
+  background: #f8f9fc;
+  box-shadow: inset 0 1px 3px rgba(28, 37, 65, .035);
+  scrollbar-color: #cbd1e0 transparent;
+  scrollbar-width: thin;
+}
+.piano-stage {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
+  isolation: isolate;
+}
+.piano-stage #pianoRoll {
+  position: relative;
+  z-index: 0;
+  display: block;
+  max-width: none;
+}
+.piano-stage #pianoPlayhead {
+  position: absolute;
+  z-index: 1;
+  inset: 0 auto auto 0;
+  display: block;
+  max-width: none;
+  pointer-events: none;
+}
+.preview-row {
+  align-items: flex-start;
+  padding-top: 5px;
+}
+.preview-intro { min-width: 180px; }
+.preview-intro p {
+  max-width: 320px;
+  line-height: 1.65;
+}
+.preview-right {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+.preview-settings {
+  display: flex;
+  align-items: end;
+  gap: 15px;
+}
+.preview-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #828895;
+  font-size: 9px;
+}
+.preview-setting > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.preview-setting output {
+  color: #4d566c;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.preview-tone {
+  width: 148px;
+  min-height: 34px;
+  font-size: 10px;
+}
+.volume-setting { width: 118px; }
+.volume-setting input {
+  width: 100%;
+  margin: 5px 0 0;
+  accent-color: #6379d8;
+}
+.preview-controls { align-items: center; }
+.preview-controls .button-secondary {
+  border-color: #dce2f6;
+  background: #f4f6ff;
+  color: #4058bd;
+}
+.preview-controls .button-secondary:hover:not(:disabled) {
+  border-color: #c5cfee;
+  background: #e9edff;
+}
+@media (max-width: 700px) {
+  .piano-tools { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .piano-scroll-note { align-self: flex-end; }
+  .piano-wrap { max-height: 540px; }
+  .preview-row { align-items: stretch; flex-direction: column; gap: 17px; }
+  .preview-intro { min-width: 0; }
+  .preview-right { width: 100%; align-items: stretch; }
+  .preview-settings { justify-content: space-between; gap: 12px; }
+  .preview-tone { width: 138px; }
+  .volume-setting { width: min(45%, 150px); }
+  .preview-controls { width: 100%; }
+  .preview-controls .button { flex: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .zoom-controls button { transition: none; }
+}
