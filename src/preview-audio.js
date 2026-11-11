@@ -37,3 +37,16 @@ export function getTimelineWidth(duration, viewportWidth, zoom = 1) {
   const pixelsPerSecond = 72 * Math.min(5, Math.max(0.06, scale));
   return Math.min(16000, Math.max(Math.ceil(viewport), Math.ceil(seconds * pixelsPerSecond + 84 + 18)));
 }
+
+export function getCanvasPixelRatio(width, height, devicePixelRatio = 1) {
+  const canvasWidth = Number(width);
+  const canvasHeight = Number(height);
+  const deviceRatio = Number(devicePixelRatio);
+  if (!Number.isFinite(canvasWidth) || canvasWidth <= 0 ||
+      !Number.isFinite(canvasHeight) || canvasHeight <= 0 ||
+      !Number.isFinite(deviceRatio) || deviceRatio <= 0) {
+    throw new RangeError("Canvas dimensions and device pixel ratio must be positive finite numbers.");
+  }
+  const pixelBudgetRatio = Math.sqrt(8000000 / (canvasWidth * canvasHeight));
+  return Math.max(0.5, Math.min(2, deviceRatio, pixelBudgetRatio));
+}
