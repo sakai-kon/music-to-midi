@@ -1,0 +1,19 @@
+{
+  "name": "music-to-midi",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "node scripts/copy-model.mjs && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "check": "node --check src/main.js"
+  },
+  "dependencies": {
+    "@spotify/basic-pitch": "1.0.1",
+    "@tensorflow/tfjs": "3.2.0"
+  },
+  "devDependencies": {
+    "vite": "6.4.1"
+  }
+}
