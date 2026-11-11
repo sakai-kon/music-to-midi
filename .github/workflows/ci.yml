@@ -21,5 +21,7 @@ jobs:
           pip install -r requirements.txt
       - name: Compile
         run: python -m compileall -q app.py tests
+      - name: JavaScript syntax
+        run: node --check static/app.js
       - name: Unit tests
         run: python -m unittest discover -s tests -v
