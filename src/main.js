@@ -514,7 +514,7 @@ function drawPianoRoll(result) {
     }
   }
 
-  const measureSeconds = 60 / result.bpm * result.numerator;
+  const measureSeconds = 60 / result.bpm * result.numerator * (4 / result.denominator);
   for (let second = 0; second <= duration; second += measureSeconds) {
     const x = left + (second / duration) * plotWidth;
     ctx.strokeStyle = "#e6e7ea";
