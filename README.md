@@ -47,6 +47,7 @@ npm run dev
 
 ~~~bash
 npm run check
+npm test
 npm run build
 npm run preview
 ~~~
@@ -63,7 +64,7 @@ npm run build はBasic Pitchのモデルファイルを public/models/ にコピ
 4. Basic Pitchモデルを含む静的ビルド
 5. GitHub Pagesへのデプロイ
 
-Viteのbase pathは /music-to-midi/ に設定しています。ユーザー側にPythonやサーバーの起動は必要ありません。
+Viteのbase pathは /music-to-midi/ に設定しています。ユーザー側にPythonやサーバーの起動は必要ありません。iPhone / iPadでは互換性を優先してTensorFlow.jsのCPUバックエンドを使用し、対応するデスクトップ環境ではWebGLを使用します。
 
 ## Limits and accuracy
 
