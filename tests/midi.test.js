@@ -77,6 +77,8 @@ test("buildMidi filters malformed note records and rejects invalid meter data", 
   const bytes = new Uint8Array(await blob.arrayBuffer());
   assert.equal(readAscii(bytes, 0, 4), "MThd");
   assert.throws(() => buildMidi([], Number.NaN, 4, 4), RangeError);
+  assert.throws(() => buildMidi([], 30, 4, 4), RangeError);
+  assert.throws(() => buildMidi([], 250, 4, 4), RangeError);
   assert.throws(() => buildMidi([], 120, 0, 4), RangeError);
   assert.throws(() => buildMidi([], 120, 4, 3), RangeError);
 });
