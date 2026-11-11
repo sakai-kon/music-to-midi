@@ -21,3 +21,6 @@ venv/
 *.csv
 .DS_Store
 Thumbs.db
+
+# Downloaded Basic Pitch weights (copied automatically during build)
+/public/models/
