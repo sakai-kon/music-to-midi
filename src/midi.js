@@ -40,11 +40,11 @@ function uint32(value) {
 }
 
 export function buildMidi(notes, bpm, numerator, denominator) {
-  if (!Number.isFinite(bpm) || bpm < 1 || bpm > 1000) {
-    throw new RangeError("BPM must be a finite value between 1 and 1000.");
+  if (!Number.isFinite(bpm) || bpm < 40 || bpm > 240) {
+    throw new RangeError("BPM must be a finite value between 40 and 240.");
   }
-  if (!Number.isInteger(numerator) || numerator < 1 || numerator > 255) {
-    throw new RangeError("Time signature numerator must be an integer between 1 and 255.");
+  if (!Number.isInteger(numerator) || numerator < 1 || numerator > 12) {
+    throw new RangeError("Time signature numerator must be an integer between 1 and 12.");
   }
   if (![1, 2, 4, 8, 16, 32, 64, 128].includes(denominator)) {
     throw new RangeError("Unsupported MIDI time signature denominator.");
