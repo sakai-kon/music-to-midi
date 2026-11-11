@@ -349,7 +349,7 @@ function detectTempo(samples) {
   if (noveltyEnergy < 1e-6) return 120;
 
   let bestBpm = 120;
-  let bestScore = -Infinity;
+  let bestScore = 0;
   const framesPerSecond = TARGET_RATE / hop;
 
   for (let bpm = 55; bpm <= 200; bpm += 0.5) {
