@@ -258,23 +258,52 @@
           <p class="eyebrow">NOTE MAP</p>
           <h3>ピアノロール</h3>
         </div>
-        <span id="pitchRange" class="subtle-label">ノートを検出すると表示されます</span>
+        <span id="pitchRange" class="subtle-label" aria-live="polite">ノートを検出すると表示されます</span>
       </div>
-      <div class="piano-wrap">
-        <canvas id="pianoRoll" aria-label="検出されたMIDIノートのピアノロール"></canvas>
+      <div class="piano-tools">
+        <div class="zoom-controls" aria-label="ピアノロールの表示倍率">
+          <span>表示倍率</span>
+          <button id="zoomOut" type="button" aria-label="縮小">−</button>
+          <output id="zoomLabel">100%</output>
+          <button id="zoomIn" type="button" aria-label="拡大">＋</button>
+          <button id="zoomFit" class="fit-button" type="button">全体表示</button>
+        </div>
+        <span class="piano-scroll-note">横にスクロールして時間を移動</span>
+      </div>
+      <div id="pianoViewport" class="piano-wrap" tabindex="0" role="region" aria-label="ピアノロール。横方向が時間、縦方向が音程です。">
+        <div id="pianoStage" class="piano-stage">
+          <canvas id="pianoRoll" aria-label="検出されたMIDIノートと鍵盤"></canvas>
+          <canvas id="pianoPlayhead" aria-hidden="true"></canvas>
+        </div>
       </div>
 
       <div class="preview-row">
-        <div>
+        <div class="preview-intro">
           <h3>サウンドプレビュー</h3>
-          <p>検出したノートをシンプルな音色で再生します。</p>
+          <p>倍音と自然な減衰を加えたピアノ系サウンドで再生します。</p>
         </div>
-        <div class="preview-controls">
-          <button id="playButton" class="button button-secondary" type="button" disabled>
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 6 10 6-10 6V6Z" fill="currentColor"/></svg>
-            再生
-          </button>
-          <button id="stopButton" class="button button-quiet" type="button" disabled>停止</button>
+        <div class="preview-right">
+          <div class="preview-settings">
+            <label class="preview-setting" for="previewTone">
+              <span>音色</span>
+              <select id="previewTone" class="control preview-tone">
+                <option value="piano" selected>ピアノ</option>
+                <option value="soft">ソフトピアノ</option>
+                <option value="electric">エレクトリック</option>
+              </select>
+            </label>
+            <label class="preview-setting volume-setting" for="previewVolume">
+              <span>音量 <output id="previewVolumeValue">65%</output></span>
+              <input id="previewVolume" type="range" min="0" max="100" value="65" aria-label="プレビュー音量">
+            </label>
+          </div>
+          <div class="preview-controls">
+            <button id="playButton" class="button button-secondary" type="button" disabled>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 6 10 6-10 6V6Z" fill="currentColor"/></svg>
+              再生
+            </button>
+            <button id="stopButton" class="button button-quiet" type="button" disabled>停止</button>
+          </div>
         </div>
       </div>
 
