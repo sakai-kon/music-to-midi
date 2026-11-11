@@ -1,6 +1,6 @@
 import * as tf from "@tensorflow/tfjs";
 import { buildMidi, clamp, midiNoteName } from "./midi.js";
-import { getTimelineWidth, midiToFrequency, PREVIEW_TONES, velocityGain } from "./preview-audio.js";
+import { getCanvasPixelRatio, getTimelineWidth, midiToFrequency, PREVIEW_TONES, velocityGain } from "./preview-audio.js";
 import {
   BasicPitch,
   addPitchBendsToNoteEvents,
@@ -512,7 +512,7 @@ function drawPianoRoll(result) {
   const duration = Math.max(1, result.duration);
   const plotWidth = Math.max(1, width - left - right);
   const pixelsPerSecond = plotWidth / duration;
-  const ratio = Math.min(2, window.devicePixelRatio || 1);
+  const ratio = getCanvasPixelRatio(width, height, window.devicePixelRatio || 1);
 
   pianoStage.style.width = width + "px";
   pianoStage.style.height = height + "px";
