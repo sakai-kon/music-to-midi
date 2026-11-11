@@ -577,6 +577,17 @@ function drawPianoRoll(result) {
     }
   }
 
+  // Restore pitch separators after measure shading is painted.
+  for (let pitch = low; pitch <= high; pitch++) {
+    const y = top + (high - pitch + 1) * rowHeight;
+    ctx.strokeStyle = pitch % 12 === 0 ? "#d3d9e7" : "#e9ecf2";
+    ctx.lineWidth = pitch % 12 === 0 ? 1 : 0.65;
+    ctx.beginPath();
+    ctx.moveTo(left, y);
+    ctx.lineTo(width - right, y);
+    ctx.stroke();
+  }
+
   const beatCount = Math.ceil(duration / beatSeconds);
   for (let beat = 0; beat <= beatCount; beat++) {
     const x = left + beat * beatSeconds * pixelsPerSecond;
