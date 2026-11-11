@@ -1,5 +1,6 @@
 import * as tf from "@tensorflow/tfjs";
 import { buildMidi, clamp, midiNoteName } from "./midi.js";
+import { getTimelineWidth, midiToFrequency, PREVIEW_TONES, velocityGain } from "./preview-audio.js";
 import {
   BasicPitch,
   addPitchBendsToNoteEvents,
@@ -15,6 +16,9 @@ const resultSection = $("resultSection");
 const errorBox = $("errorMessage");
 const progressPanel = $("progressPanel");
 const canvas = $("pianoRoll");
+const pianoViewport = $("pianoViewport");
+const pianoStage = $("pianoStage");
+const playheadCanvas = $("pianoPlayhead");
 
 const TARGET_RATE = 22050;
 const MAX_FILE_BYTES = 30 * 1024 * 1024;
@@ -30,8 +34,12 @@ let selectedObjectUrl = null;
 let latestResult = null;
 let pitchModel = null;
 let audioContext = null;
-let activeOscillators = [];
-let playbackTimer = null;
+let activeVoices = [];
+let playbackBus = [];
+let playbackFrame = 0;
+let playbackStartAt = 0;
+let pianoZoom = 1;
+let pianoLayout = null;
 let modelLoadPromise = null;
 
 function setError(message) {
@@ -458,6 +466,7 @@ async function transcribe(samples, sensitivity) {
     )
     .map((note) => ({
       pitch: Math.round(note.pitchMidi),
+      pitchFloat: clamp(note.pitchMidi, 0, 127),
       name: midiNoteName(Math.round(note.pitchMidi)),
       start: Math.max(0, note.startTimeSeconds),
       end: Math.max(note.startTimeSeconds + 0.025, note.startTimeSeconds + note.durationSeconds),
@@ -466,82 +475,248 @@ async function transcribe(samples, sensitivity) {
     .sort((a, b) => a.start - b.start || a.pitch - b.pitch);
 }
 
-function drawPianoRoll(result) {
-  const notes = result.notes;
-  const rect = canvas.getBoundingClientRect();
-  const width = Math.max(640, Math.floor(rect.width));
-  const height = 300;
-  const ratio = window.devicePixelRatio || 1;
-  canvas.width = width * ratio;
-  canvas.height = height * ratio;
-  canvas.style.width = width + "px";
-  canvas.style.height = height + "px";
-  const ctx = canvas.getContext("2d");
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-  ctx.clearRect(0, 0, width, height);
+function drawRoundedRect(ctx, x, y, width, height, radius) {
+  const safeRadius = Math.max(0, Math.min(radius, width / 2, height / 2));
+  ctx.beginPath();
+  if (typeof ctx.roundRect === "function") ctx.roundRect(x, y, width, height, safeRadius);
+  else ctx.rect(x, y, width, height);
+}
 
-  const left = 48;
-  const right = 16;
-  const top = 14;
-  const bottom = 24;
-  const plotWidth = width - left - right;
-  const plotHeight = height - top - bottom;
-  const duration = Math.max(1, result.duration);
+function drawPianoRoll(result) {
+  if (!result) return;
+  const notes = result.notes;
+  const viewportWidth = Math.max(280, Math.floor(pianoViewport.clientWidth || 640));
+  const width = getTimelineWidth(result.duration, viewportWidth, pianoZoom);
   let minPitch = 127;
   let maxPitch = 0;
   for (const note of notes) {
     minPitch = Math.min(minPitch, note.pitch);
     maxPitch = Math.max(maxPitch, note.pitch);
   }
-  const low = notes.length ? Math.max(0, minPitch - 2) : 48;
-  const high = notes.length ? Math.min(127, maxPitch + 2) : 72;
-  const span = Math.max(12, high - low + 1);
-  const rowHeight = plotHeight / span;
 
-  ctx.fillStyle = "#fbfbfc";
+  let low = notes.length ? Math.max(0, minPitch - 2) : 48;
+  let high = notes.length ? Math.min(127, maxPitch + 2) : 71;
+  if (high - low + 1 < 12) {
+    low = Math.max(0, low - Math.ceil((12 - (high - low + 1)) / 2));
+    high = Math.min(127, low + 11);
+    low = Math.max(0, high - 11);
+  }
+
+  const span = high - low + 1;
+  const rowHeight = Math.max(8, Math.min(17, 540 / span));
+  const left = 66;
+  const right = 20;
+  const top = 48;
+  const bottom = 28;
+  const height = Math.ceil(top + span * rowHeight + bottom);
+  const duration = Math.max(1, result.duration);
+  const plotWidth = Math.max(1, width - left - right);
+  const pixelsPerSecond = plotWidth / duration;
+  const ratio = Math.min(2, window.devicePixelRatio || 1);
+
+  pianoStage.style.width = width + "px";
+  pianoStage.style.height = height + "px";
+  for (const target of [canvas, playheadCanvas]) {
+    target.width = Math.round(width * ratio);
+    target.height = Math.round(height * ratio);
+    target.style.width = width + "px";
+    target.style.height = height + "px";
+  }
+
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#f8f9fc";
   ctx.fillRect(0, 0, width, height);
-  ctx.font = "10px -apple-system, BlinkMacSystemFont, sans-serif";
-  ctx.textAlign = "right";
-  ctx.textBaseline = "middle";
 
-  for (let pitch = low; pitch <= high; pitch++) {
-    const y = top + (high - pitch) * rowHeight;
-    ctx.fillStyle = pitch % 12 === 0 ? "#e8e9ec" : "#f0f1f3";
-    ctx.fillRect(left, y + rowHeight - 1, plotWidth, 1);
-    if (pitch % 12 === 0 || pitch === low || pitch === high) {
-      ctx.fillStyle = "#737780";
-      ctx.fillText(midiNoteName(pitch), left - 8, y + rowHeight / 2);
+  const beatSeconds = 60 / result.bpm * (4 / result.denominator);
+  const barSeconds = beatSeconds * result.numerator;
+  const barWidth = barSeconds * pixelsPerSecond;
+  const barCount = Math.ceil(duration / barSeconds);
+
+  for (let bar = 0; bar < barCount; bar++) {
+    const x = left + bar * barWidth;
+    const nextX = Math.min(left + plotWidth, x + barWidth);
+    if (bar % 2 === 1) {
+      ctx.fillStyle = "rgba(104, 121, 190, .035)";
+      ctx.fillRect(x, top, Math.max(0, nextX - x), height - top - bottom);
     }
   }
 
-  const measureSeconds = 60 / result.bpm * result.numerator * (4 / result.denominator);
-  for (let second = 0; second <= duration; second += measureSeconds) {
-    const x = left + (second / duration) * plotWidth;
-    ctx.strokeStyle = "#e6e7ea";
+  ctx.fillStyle = "#f1f3f8";
+  ctx.fillRect(0, 0, width, top);
+  ctx.fillStyle = "#252a35";
+  ctx.font = "700 9px -apple-system, BlinkMacSystemFont, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("KEY", left / 2, top / 2);
+  ctx.fillStyle = "#747d91";
+  ctx.textAlign = "left";
+  ctx.fillText("MEASURES", left + 8, 12);
+
+  const labelEvery = Math.max(1, Math.ceil(64 / Math.max(1, barWidth)));
+  for (let bar = 0; bar <= barCount; bar++) {
+    const x = left + bar * barWidth;
+    if (x > left + plotWidth + 1) break;
+    ctx.strokeStyle = "rgba(76, 91, 132, .22)";
+    ctx.lineWidth = bar === 0 ? 1.4 : 1;
+    ctx.beginPath();
+    ctx.moveTo(x, 18);
+    ctx.lineTo(x, height - bottom);
+    ctx.stroke();
+    if (bar < barCount && bar % labelEvery === 0 && barWidth >= 18) {
+      ctx.fillStyle = "#66718a";
+      ctx.font = "600 9px -apple-system, BlinkMacSystemFont, sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(String(bar + 1).padStart(2, "0"), x + 7, 31);
+      if (barWidth > 94) {
+        ctx.fillStyle = "#a0a6b3";
+        ctx.font = "9px -apple-system, BlinkMacSystemFont, sans-serif";
+        ctx.fillText(formatTime(bar * barSeconds), x + 7, 41);
+      }
+    }
+  }
+
+  const beatCount = Math.ceil(duration / beatSeconds);
+  for (let beat = 0; beat <= beatCount; beat++) {
+    const x = left + beat * beatSeconds * pixelsPerSecond;
+    if (x > left + plotWidth) break;
+    const isBar = beat % result.numerator === 0;
+    ctx.strokeStyle = isBar ? "rgba(76, 91, 132, .24)" : "rgba(76, 91, 132, .105)";
+    ctx.lineWidth = isBar ? 1.15 : 0.7;
     ctx.beginPath();
     ctx.moveTo(x, top);
-    ctx.lineTo(x, top + plotHeight);
+    ctx.lineTo(x, height - bottom);
     ctx.stroke();
-    ctx.fillStyle = "#858992";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    ctx.fillText(formatTime(second), x, top + plotHeight + 7);
+    if (beat < beatCount && barWidth > 36) {
+      const halfX = x + beatSeconds * pixelsPerSecond / 2;
+      ctx.strokeStyle = "rgba(76, 91, 132, .055)";
+      ctx.setLineDash([2, 4]);
+      ctx.beginPath();
+      ctx.moveTo(halfX, top);
+      ctx.lineTo(halfX, height - bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  const blackPitchClasses = new Set([1, 3, 6, 8, 10]);
+  for (let pitch = low; pitch <= high; pitch++) {
+    const y = top + (high - pitch) * rowHeight;
+    const blackKey = blackPitchClasses.has(pitch % 12);
+    ctx.fillStyle = blackKey ? "#f1f3f8" : "#ffffff";
+    ctx.fillRect(left, y, plotWidth, rowHeight);
+    ctx.strokeStyle = pitch % 12 === 0 ? "#d3d9e7" : "#e9ecf2";
+    ctx.lineWidth = pitch % 12 === 0 ? 1 : 0.65;
+    ctx.beginPath();
+    ctx.moveTo(left, y + rowHeight);
+    ctx.lineTo(width - right, y + rowHeight);
+    ctx.stroke();
+
+    if (blackKey) {
+      ctx.fillStyle = "#272b35";
+      drawRoundedRect(ctx, 3, y + 1, left * 0.67, Math.max(3, rowHeight - 2), 3);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(3, y + 1, left - 7, Math.max(2, rowHeight - 2));
+      ctx.strokeStyle = "#d9dde6";
+      ctx.strokeRect(3, y + 1, left - 7, Math.max(2, rowHeight - 2));
+    }
+
+    if (pitch % 12 === 0) {
+      ctx.fillStyle = "#4a5262";
+      ctx.font = "600 9px -apple-system, BlinkMacSystemFont, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(midiNoteName(pitch), left * 0.34, y + rowHeight / 2);
+    }
   }
 
   for (const note of notes) {
-    const x = left + (note.start / duration) * plotWidth;
-    const w = Math.max(2, ((note.end - note.start) / duration) * plotWidth);
+    if (!Number.isFinite(note.start) || !Number.isFinite(note.end) ||
+        !Number.isFinite(note.pitch) || note.pitch < low || note.pitch > high) continue;
+    const start = Math.max(0, note.start);
+    const end = Math.min(duration, note.end);
+    if (end <= start) continue;
+    const x = left + start * pixelsPerSecond;
     const y = top + (high - note.pitch) * rowHeight + 1;
-    const alpha = 0.45 + note.velocity / 127 * 0.5;
-    ctx.fillStyle = "rgba(36, 39, 45, " + alpha.toFixed(2) + ")";
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, Math.max(3, rowHeight - 2), Math.min(4, rowHeight / 3));
+    const noteWidth = Math.max(3, (end - start) * pixelsPerSecond);
+    const noteHeight = Math.max(3, rowHeight - 2);
+    const strength = Math.max(.45, Math.min(1, (note.velocity || 80) / 127));
+    const gradient = ctx.createLinearGradient(x, y, x, y + noteHeight);
+    gradient.addColorStop(0, strength > .8 ? "#91a5ff" : "#a5b4f6");
+    gradient.addColorStop(1, "#627be0");
+    ctx.fillStyle = gradient;
+    ctx.shadowColor = "rgba(72, 92, 176, .16)";
+    ctx.shadowBlur = 3;
+    drawRoundedRect(ctx, x + .6, y, noteWidth, noteHeight, Math.min(4, noteHeight / 2));
     ctx.fill();
+    ctx.shadowBlur = 0;
+
+    if (noteWidth >= 48 && rowHeight >= 12) {
+      ctx.fillStyle = "rgba(255,255,255,.95)";
+      ctx.font = "600 9px -apple-system, BlinkMacSystemFont, sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(midiNoteName(note.pitch), x + 6, y + noteHeight / 2, noteWidth - 10);
+    }
   }
 
+  pianoLayout = { left, plotWidth, duration, width, height, ratio };
   $("pitchRange").textContent = notes.length
-    ? notes.length.toLocaleString("ja-JP") + " notes · " + low + "–" + high + " MIDI"
-    : "ノートが検出されませんでした。感度を調整して再変換してください。";
+    ? notes.length.toLocaleString("ja-JP") + " notes · " + midiNoteName(low) + " – " + midiNoteName(high)
+    : "ノートが検出されませんでした。";
+  $("zoomLabel").textContent = Math.round(pianoZoom * 100) + "%";
+  clearPlayhead();
+}
+
+function drawPlayhead(seconds) {
+  if (!pianoLayout) return;
+  const ctx = playheadCanvas.getContext("2d");
+  const { left, plotWidth, duration, width, height, ratio } = pianoLayout;
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  const x = left + Math.max(0, Math.min(duration, seconds)) / duration * plotWidth;
+  ctx.save();
+  ctx.strokeStyle = "#566fe0";
+  ctx.lineWidth = 1.8;
+  ctx.shadowColor = "rgba(86, 111, 224, .45)";
+  ctx.shadowBlur = 7;
+  ctx.beginPath();
+  ctx.moveTo(x, 17);
+  ctx.lineTo(x, height - 17);
+  ctx.stroke();
+  ctx.fillStyle = "#566fe0";
+  ctx.beginPath();
+  ctx.arc(x, 17, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function clearPlayhead() {
+  const ctx = playheadCanvas.getContext("2d");
+  if (!ctx) return;
+  const width = pianoLayout?.width || 1;
+  const height = pianoLayout?.height || 1;
+  const ratio = pianoLayout?.ratio || Math.min(2, window.devicePixelRatio || 1);
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+}
+
+function changePianoZoom(nextZoom, fitToWidth = false) {
+  if (!latestResult) return;
+  const previousWidth = pianoLayout?.width || pianoViewport.scrollWidth;
+  const center = pianoViewport.scrollLeft + pianoViewport.clientWidth / 2;
+  if (fitToWidth) {
+    const fit = (pianoViewport.clientWidth - 84) / Math.max(1, latestResult.duration * 72);
+    pianoZoom = clamp(fit, 0.06, 5);
+  } else {
+    pianoZoom = clamp(nextZoom, 0.06, 5);
+  }
+  drawPianoRoll(latestResult);
+  const scale = pianoLayout.width / Math.max(1, previousWidth);
+  pianoViewport.scrollLeft = fitToWidth ? 0 : Math.max(0, center * scale - pianoViewport.clientWidth / 2);
 }
 
 function showResult(result) {
@@ -613,11 +788,40 @@ convertButton.addEventListener("click", convert);
 async function getPlaybackContext() {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) throw new Error("音声プレビューに対応していません。");
-  if (!audioContext || audioContext.state === "closed") {
-    audioContext = new AudioContextClass();
-  }
+  if (!audioContext || audioContext.state === "closed") audioContext = new AudioContextClass();
   if (audioContext.state === "suspended") await audioContext.resume();
   return audioContext;
+}
+
+function stopPlayback() {
+  if (playbackFrame) window.cancelAnimationFrame(playbackFrame);
+  playbackFrame = 0;
+  playbackStartAt = 0;
+  for (const voice of activeVoices) {
+    try { voice.oscillator.stop(); } catch {}
+    try { voice.oscillator.disconnect(); } catch {}
+    try { voice.filter.disconnect(); } catch {}
+    try { voice.gain.disconnect(); } catch {}
+  }
+  activeVoices = [];
+  for (const node of playbackBus) {
+    try { node.disconnect(); } catch {}
+  }
+  playbackBus = [];
+  clearPlayhead();
+  $("playButton").disabled = !(latestResult?.notes?.length);
+  $("stopButton").disabled = true;
+}
+
+function updatePlaybackCursor() {
+  if (!audioContext || !playbackStartAt || !latestResult) return;
+  const elapsed = audioContext.currentTime - playbackStartAt;
+  if (elapsed >= latestResult.duration + 0.12) {
+    stopPlayback();
+    return;
+  }
+  drawPlayhead(elapsed);
+  playbackFrame = window.requestAnimationFrame(updatePlaybackCursor);
 }
 
 async function playPreview() {
@@ -625,53 +829,87 @@ async function playPreview() {
   stopPlayback();
   try {
     const context = await getPlaybackContext();
-    const startAt = context.currentTime + 0.1;
     const master = context.createGain();
-    master.gain.value = 0.72;
-    master.connect(context.destination);
+    const compressor = context.createDynamicsCompressor();
+    const volume = Number($("previewVolume").value) / 100;
+    master.gain.value = 0.78 * clamp(volume, 0, 1);
+    compressor.threshold.value = -20;
+    compressor.knee.value = 18;
+    compressor.ratio.value = 5.5;
+    compressor.attack.value = 0.004;
+    compressor.release.value = 0.18;
+    master.connect(compressor);
+    compressor.connect(context.destination);
+    playbackBus = [master, compressor];
+
+    const partials = PREVIEW_TONES[$("previewTone").value] || PREVIEW_TONES.piano;
+    const real = new Float32Array(partials.length + 1);
+    const imaginary = new Float32Array(partials.length + 1);
+    partials.forEach((amplitude, index) => { real[index + 1] = amplitude; });
+    const pianoWave = context.createPeriodicWave(real, imaginary);
+    const startAt = context.currentTime + 0.1;
 
     for (const note of latestResult.notes.slice(0, 5000)) {
+      const noteStart = Math.max(0, note.start);
+      const noteEnd = Math.max(noteStart + 0.035, note.end);
+      const start = startAt + noteStart;
+      const end = startAt + noteEnd;
+      const frequency = midiToFrequency(note.pitchFloat ?? note.pitch);
+      const peak = Math.max(0.0005, velocityGain(clamp(note.velocity ?? 84, 0, 127)));
+      const attackEnd = start + Math.min(0.012, (end - start) * 0.24);
+      const decayEnd = Math.min(end - 0.015, start + 0.28);
+      const releaseStart = Math.max(attackEnd, decayEnd, end - 0.055);
+      const sustain = Math.max(0.0005, peak * 0.38);
+
       const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      const start = startAt + note.start;
-      const end = startAt + note.end;
-      const frequency = 440 * Math.pow(2, (note.pitch - 69) / 12);
-      const amplitude = Math.max(0.008, note.velocity / 127 * 0.1);
-      oscillator.type = "triangle";
+      oscillator.setPeriodicWave(pianoWave);
       oscillator.frequency.setValueAtTime(frequency, start);
+
+      const filter = context.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(Math.min(11000, 2300 + frequency * 6), start);
+      filter.Q.setValueAtTime(0.65, start);
+
+      const gain = context.createGain();
       gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.linearRampToValueAtTime(amplitude, start + 0.012);
-      gain.gain.setValueAtTime(amplitude, Math.max(start + 0.014, end - 0.035));
-      gain.gain.exponentialRampToValueAtTime(0.0001, Math.max(start + 0.02, end));
-      oscillator.connect(gain);
+      gain.gain.exponentialRampToValueAtTime(peak, attackEnd);
+      if (decayEnd > attackEnd) gain.gain.exponentialRampToValueAtTime(sustain, decayEnd);
+      gain.gain.setValueAtTime(sustain, releaseStart);
+      gain.gain.exponentialRampToValueAtTime(0.0001, end + 0.085);
+
+      oscillator.connect(filter);
+      filter.connect(gain);
       gain.connect(master);
       oscillator.start(start);
-      oscillator.stop(end + 0.025);
-      activeOscillators.push(oscillator);
+      oscillator.stop(end + 0.09);
+      oscillator.onended = () => {
+        try { oscillator.disconnect(); } catch {}
+        try { filter.disconnect(); } catch {}
+        try { gain.disconnect(); } catch {}
+      };
+      activeVoices.push({ oscillator, filter, gain });
     }
 
+    pianoViewport.scrollLeft = 0;
     $("playButton").disabled = true;
     $("stopButton").disabled = false;
-    playbackTimer = window.setTimeout(stopPlayback, (latestResult.duration + 0.5) * 1000);
+    playbackStartAt = startAt;
+    drawPlayhead(0);
+    playbackFrame = window.requestAnimationFrame(updatePlaybackCursor);
   } catch (error) {
+    stopPlayback();
     setError(error?.message || "プレビューを再生できませんでした。");
   }
 }
 
-function stopPlayback() {
-  for (const oscillator of activeOscillators) {
-    try { oscillator.stop(); } catch {}
-    try { oscillator.disconnect(); } catch {}
-  }
-  activeOscillators = [];
-  if (playbackTimer) window.clearTimeout(playbackTimer);
-  playbackTimer = null;
-  $("playButton").disabled = !(latestResult?.notes?.length);
-  $("stopButton").disabled = true;
-}
-
 $("playButton").addEventListener("click", playPreview);
 $("stopButton").addEventListener("click", stopPlayback);
+$("zoomIn").addEventListener("click", () => changePianoZoom(pianoZoom * 1.35));
+$("zoomOut").addEventListener("click", () => changePianoZoom(pianoZoom / 1.35));
+$("zoomFit").addEventListener("click", () => changePianoZoom(pianoZoom, true));
+$("previewVolume").addEventListener("input", () => {
+  $("previewVolumeValue").textContent = $("previewVolume").value + "%";
+});
 
 $("downloadButton").addEventListener("click", () => {
   if (!latestResult?.midiBlob) return;
