@@ -19,13 +19,115 @@
   </header>
 
   <main class="shell">
-    <section class="intro">
-      <p class="eyebrow">AUDIO TRANSCRIPTION STUDIO</p>
-      <h1>音を、MIDIへ。</h1>
-      <p class="intro-copy">音声をアップロードして、メロディや和音をノートデータに変換。<br class="desktop-break">BPMや感度を調整しながら、ブラウザ上で結果を確認できます。</p>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy" data-reveal>
+        <p class="hero-eyebrow"><span class="hero-eyebrow-mark"></span> MUSIC TO MIDI <span class="hero-eyebrow-divider">/</span> ON-DEVICE AI</p>
+        <h1 id="hero-title">音を、<br><span>音符へ。</span></h1>
+        <p class="hero-description">メロディも、重なり合う和音も。<br class="desktop-break">音源からノートを読み取り、MIDIに変換します。</p>
+        <div class="hero-actions">
+          <button id="heroSelectButton" class="hero-button" type="button">
+            <span>音源を選択する</span>
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <a class="hero-text-link" href="#workspace">使い方を見る <span aria-hidden="true">↓</span></a>
+        </div>
+        <div class="hero-footnote">
+          <span class="hero-footnote-dot"></span>
+          <span>音声は端末内で処理。サーバーへのアップロード不要。</span>
+        </div>
+      </div>
+
+      <figure class="hero-visual" data-reveal aria-label="音声波形がMIDIの音符へ変換されるイメージ">
+        <div class="visual-topline">
+          <span>FROM SOUND</span>
+          <span class="visual-topline-center"><i></i> TRANSCRIPTION</span>
+          <span>TO MIDI</span>
+        </div>
+        <svg class="sound-to-midi" viewBox="0 0 720 440" role="img" aria-labelledby="visual-title visual-desc">
+          <title id="visual-title">Sound to MIDI</title>
+          <desc id="visual-desc">左側の音声波形が右側のピアノロール上のノートに変換されるイメージ。</desc>
+          <defs>
+            <linearGradient id="waveGradient" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#a4b8ff"/>
+              <stop offset=".52" stop-color="#dce4ff"/>
+              <stop offset="1" stop-color="#a9a4ff"/>
+            </linearGradient>
+            <linearGradient id="noteGradient" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#d5dcff"/>
+              <stop offset="1" stop-color="#8ea5ff"/>
+            </linearGradient>
+            <radialGradient id="visualGlow">
+              <stop offset="0" stop-color="#657fff" stop-opacity=".24"/>
+              <stop offset="1" stop-color="#657fff" stop-opacity="0"/>
+            </radialGradient>
+            <filter id="softShadow" x="-30%" y="-50%" width="160%" height="200%">
+              <feGaussianBlur stdDeviation="12"/>
+            </filter>
+          </defs>
+          <ellipse cx="390" cy="215" rx="270" ry="190" fill="url(#visualGlow)"/>
+          <g class="visual-grid" opacity=".24">
+            <path d="M50 85H670M50 145H670M50 205H670M50 265H670M50 325H670"/>
+            <path d="M110 55V370M210 55V370M310 55V370M410 55V370M510 55V370M610 55V370"/>
+          </g>
+          <g class="waveform-group">
+            <path class="wave-shadow" d="M54 218 C72 218 72 188 90 188 S108 252 126 252 S144 150 162 150 S180 290 198 290 S216 120 234 120 S252 316 270 316 S288 174 306 174 S324 248 342 248" />
+            <path class="wave-line" d="M54 218 C72 218 72 188 90 188 S108 252 126 252 S144 150 162 150 S180 290 198 290 S216 120 234 120 S252 316 270 316 S288 174 306 174 S324 248 342 248" />
+            <path class="wave-line wave-line-secondary" d="M54 218 C72 218 72 202 90 202 S108 235 126 235 S144 177 162 177 S180 270 198 270 S216 145 234 145 S252 292 270 292 S288 193 306 193 S324 235 342 235" />
+            <circle class="wave-point" cx="234" cy="120" r="5"/>
+            <circle class="wave-point wave-point-small" cx="198" cy="290" r="3"/>
+          </g>
+          <g class="conversion-mark">
+            <path d="M365 218h48m-14-14 14 14-14 14" stroke="#a9b8ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>
+            <circle cx="385" cy="218" r="32" stroke="#a9b8ff" stroke-opacity=".17"/>
+          </g>
+          <g class="piano-grid">
+            <path d="M445 118H674M445 163H674M445 208H674M445 253H674M445 298H674" stroke="white" stroke-opacity=".13"/>
+            <path d="M445 100V324M502 100V324M559 100V324M616 100V324M673 100V324" stroke="white" stroke-opacity=".1"/>
+          </g>
+          <g class="midi-notes">
+            <rect x="459" y="267" width="55" height="17" rx="8.5" fill="url(#noteGradient)"/>
+            <rect x="488" y="222" width="93" height="17" rx="8.5" fill="url(#noteGradient)"/>
+            <rect x="525" y="177" width="61" height="17" rx="8.5" fill="url(#noteGradient)"/>
+            <rect x="558" y="132" width="93" height="17" rx="8.5" fill="url(#noteGradient)"/>
+            <rect x="605" y="87" width="48" height="17" rx="8.5" fill="url(#noteGradient)"/>
+            <rect x="635" y="267" width="35" height="17" rx="8.5" fill="#8fa5ff" fill-opacity=".65"/>
+          </g>
+          <g class="visual-frequency" fill="#aab5d3" font-family="Arial, sans-serif" font-size="10" letter-spacing="1.6">
+            <text x="54" y="370">AUDIO WAVEFORM</text>
+            <text x="445" y="370">MIDI NOTES</text>
+          </g>
+          <path class="visual-baseline" d="M54 345H342M445 345H674" stroke="white" stroke-opacity=".12"/>
+        </svg>
+        <div class="visual-bottomline">
+          <span><b>01</b> ANALYZE AUDIO</span>
+          <span class="visual-bottomline-dot"></span>
+          <span><b>02</b> EXTRACT NOTES</span>
+          <span class="visual-bottomline-dot"></span>
+          <span><b>03</b> EXPORT MIDI</span>
+        </div>
+        <figcaption class="visual-caption">A clearer way to see the music inside your sound.</figcaption>
+      </figure>
     </section>
 
-    <section class="workspace" aria-label="音声からMIDIへの変換">
+    <section class="hero-proof" data-reveal aria-label="主な特徴">
+      <div class="proof-item">
+        <span class="proof-number">01</span>
+        <span class="proof-title">Polyphonic</span>
+        <span class="proof-description">和音を含む音符推定</span>
+      </div>
+      <div class="proof-item">
+        <span class="proof-number">02</span>
+        <span class="proof-title">On-device</span>
+        <span class="proof-description">ブラウザ内でAI処理</span>
+      </div>
+      <div class="proof-item">
+        <span class="proof-number">03</span>
+        <span class="proof-title">MIDI export</span>
+        <span class="proof-description">編集可能なファイルへ</span>
+      </div>
+    </section>
+
+    <section id="workspace" class="workspace reveal" data-reveal aria-label="音声からMIDIへの変換">
       <div class="section-heading">
         <div>
           <p class="step-label">01 / SOURCE</p>
