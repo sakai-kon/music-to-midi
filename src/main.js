@@ -83,7 +83,7 @@ function safeStem(name) {
   return (name || "transcription")
     .replace(/\.[^.]+$/, "")
     .normalize("NFKD")
-    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/[^\p{L}\p{N}._-]+/gu, "_")
     .replace(/^[_\.]+|[_\.]+$/g, "")
     .slice(0, 70) || "transcription";
 }
@@ -150,12 +150,6 @@ $("chooseFile").addEventListener("click", () => fileInput.click());
 $("heroSelectButton").addEventListener("click", () => fileInput.click());
 dropzone.addEventListener("click", (event) => {
   if (!event.target.closest("button")) fileInput.click();
-});
-dropzone.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" || event.key === " ") {
-    event.preventDefault();
-    fileInput.click();
-  }
 });
 fileInput.addEventListener("change", () => setFile(fileInput.files[0]));
 $("removeFile").addEventListener("click", clearFile);
