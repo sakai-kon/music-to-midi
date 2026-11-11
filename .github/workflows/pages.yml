@@ -32,6 +32,9 @@ jobs:
       - name: JavaScript syntax check
         run: npm run check
 
+      - name: Unit tests
+        run: npm test
+
       - name: Build static site and model
         run: npm run build
         env:
