@@ -141,6 +141,7 @@ function clearFile() {
 }
 
 $("chooseFile").addEventListener("click", () => fileInput.click());
+$("heroSelectButton").addEventListener("click", () => fileInput.click());
 dropzone.addEventListener("click", (event) => {
   if (!event.target.closest("button")) fileInput.click();
 });
@@ -719,6 +720,36 @@ window.addEventListener("beforeunload", () => {
   if (selectedObjectUrl) URL.revokeObjectURL(selectedObjectUrl);
   if (audioContext && audioContext.state !== "closed") audioContext.close();
 });
+
+function setupScrollReveal() {
+  const elements = Array.from(document.querySelectorAll("[data-reveal]"));
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  if (!("IntersectionObserver" in window) || reducedMotion) {
+    elements.forEach((element) => element.classList.add("is-visible"));
+    return;
+  }
+
+  document.documentElement.classList.add("motion-ready");
+  const observer = new IntersectionObserver((entries, instance) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add("is-visible");
+        instance.unobserve(entry.target);
+      }
+    });
+  }, {
+    threshold: 0.14,
+    rootMargin: "0px 0px -42px 0px"
+  });
+
+  elements.forEach((element, index) => {
+    element.style.setProperty("--reveal-delay", Math.min(index % 3, 2) * 85 + "ms");
+    observer.observe(element);
+  });
+}
+
+setupScrollReveal();
 
 fetch(MODEL_URL, { method: "HEAD" })
   .then((response) => {
