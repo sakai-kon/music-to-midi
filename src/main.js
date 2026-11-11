@@ -19,7 +19,7 @@ const TARGET_RATE = 22050;
 const MAX_FILE_BYTES = 30 * 1024 * 1024;
 const MAX_DURATION_SECONDS = 180;
 const MODEL_URL = new URL(
-  \`\${import.meta.env.BASE_URL}models/model.json\`,
+  `${import.meta.env.BASE_URL}models/model.json`,
   window.location.origin
 ).href;
 
