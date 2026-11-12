@@ -36,22 +36,30 @@ test("downloads and saves the model when IndexedDB has no saved copy", async () 
   };
   const requests = [];
   const statuses = [];
+  const progress = [];
   const tf = {
-    async loadGraphModel(source) {
+    async loadGraphModel(source, options) {
       requests.push(source);
       if (source === MODEL_STORAGE_KEY) throw new Error("No saved model.");
+      options.onProgress(0.25);
+      options.onProgress(0.75);
+      options.onProgress(1);
       return downloadedModel;
     }
   };
 
-  const result = await loadBasicPitchGraphModel(tf, "/models/model.json", (status) => {
-    statuses.push(status);
-  });
+  const result = await loadBasicPitchGraphModel(
+    tf,
+    "/models/model.json",
+    (status) => statuses.push(status),
+    (fraction) => progress.push(fraction)
+  );
 
   assert.equal(result, downloadedModel);
   assert.deepEqual(requests, [MODEL_STORAGE_KEY, "/models/model.json"]);
   assert.equal(downloadedModel.savedTo, MODEL_STORAGE_KEY);
-  assert.deepEqual(statuses, ["checking-cache", "downloading", "saved"]);
+  assert.deepEqual(statuses, ["checking-cache", "downloading", "saving", "saved"]);
+  assert.deepEqual(progress, [0.25, 0.75, 1]);
 });
 
 test("continues when the browser cannot persist the downloaded model", async () => {
@@ -73,7 +81,7 @@ test("continues when the browser cannot persist the downloaded model", async () 
   });
 
   assert.equal(result, downloadedModel);
-  assert.deepEqual(statuses, ["checking-cache", "downloading", "save-failed"]);
+  assert.deepEqual(statuses, ["checking-cache", "downloading", "saving", "save-failed"]);
 });
 
 test("reports a network/model download error instead of hiding it", async () => {

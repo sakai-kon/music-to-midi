@@ -407,7 +407,9 @@ async function ensureModel() {
       if (status === "checking-cache") {
         setProgress(7, "保存済みAIモデルを確認しています", "この端末のブラウザ内ストレージを確認しています。");
       } else if (status === "downloading") {
-        setProgress(7, "AIモデルを初回ダウンロードしています", "取得したモデルは端末内に保存し、次回から再ダウンロードを避けます。");
+        setProgress(7, "AIモデルを初回ダウンロードしています", "モデルデータを取得しています。初回のみ必要です。");
+      } else if (status === "saving") {
+        setProgress(13, "ダウンロードが完了しました", "AIモデルをこの端末のブラウザ内ストレージに保存しています。");
       } else if (status === "loaded-cache") {
         setProgress(14, "端末に保存したAIモデルを読み込みました", "ネットワークからモデルを再取得せずに準備できました。");
       } else if (status === "saved") {
@@ -415,6 +417,13 @@ async function ensureModel() {
       } else if (status === "save-failed") {
         setProgress(14, "AIモデルを読み込みました", "端末内保存を利用できませんでした。次回は再ダウンロードが必要になる場合があります。");
       }
+    }, (fraction) => {
+      const downloaded = Math.round(fraction * 100);
+      setProgress(
+        7 + fraction * 5.5,
+        "AIモデルを初回ダウンロードしています",
+        `モデルデータを取得しています（${downloaded}%）。通信環境によって時間がかかる場合があります。`
+      );
     });
     const model = new BasicPitch(Promise.resolve(graphModel));
     await model.model;

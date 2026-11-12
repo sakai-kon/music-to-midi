@@ -5,7 +5,7 @@ export const MODEL_STORAGE_KEY = "indexeddb://music-to-midi-basic-pitch-v1";
  * On a cache miss (or an unavailable/corrupt cache), it downloads the model
  * and best-effort saves a copy for the next visit.
  */
-export async function loadBasicPitchGraphModel(tf, modelUrl, onStatus = () => {}) {
+export async function loadBasicPitchGraphModel(tf, modelUrl, onStatus = () => {}, onProgress = () => {}) {
   if (!tf || typeof tf.loadGraphModel !== "function") {
     throw new TypeError("A TensorFlow.js instance with loadGraphModel() is required.");
   }
@@ -23,24 +23,35 @@ export async function loadBasicPitchGraphModel(tf, modelUrl, onStatus = () => {}
     onStatus("downloading");
   }
 
-  const downloadedModel = await tf.loadGraphModel(modelUrl);
+  const downloadedModel = await tf.loadGraphModel(modelUrl, {
+    onProgress: (fraction) => {
+      const progress = Number.isFinite(fraction)
+        ? Math.max(0, Math.min(1, fraction))
+        : 0;
+      onProgress(progress);
+    }
+  });
+
+  onStatus("saving");
   try {
     if (typeof downloadedModel.save !== "function") {
       throw new Error("This TensorFlow.js model does not support browser storage.");
     }
     await downloadedModel.save(MODEL_STORAGE_KEY);
 
-    // Ask the browser to reduce the chance of automatic storage eviction.
-    // This is best-effort: browsers may not implement or grant persistent storage.
+    onStatus("saved");
+
+    // Request persistent storage without blocking model use. Browsers may not
+    // support this API, grant the request, or resolve it immediately.
     const storageManager = globalThis.navigator?.storage;
     if (typeof storageManager?.persist === "function") {
       try {
-        await storageManager.persist();
+        const persistenceRequest = storageManager.persist();
+        Promise.resolve(persistenceRequest).catch(() => {});
       } catch {
-        // The IndexedDB copy is still usable even if persistence cannot be granted.
+        // The IndexedDB copy is already saved and remains usable.
       }
     }
-    onStatus("saved");
   } catch (error) {
     // Keep the app usable in private browsing or when storage is unavailable.
     onStatus("save-failed", error);
