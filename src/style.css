@@ -155,3 +155,240 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
   .download-row .button { width: 100%; }
 }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }
+
+/* Compact default viewport: open advanced settings to expand the page. */
+@media (max-width: 600px) {
+  .topbar {
+    height: 50px;
+    padding-inline: 14px;
+  }
+
+  .app-shell {
+    width: min(100% - 24px, 480px);
+    padding: 12px 0 10px;
+  }
+
+  .intro {
+    margin: 0 0 12px;
+  }
+
+  .intro .eyebrow,
+  .intro > p:last-child,
+  .footer {
+    display: none;
+  }
+
+  .intro h1 {
+    font-size: 27px;
+    line-height: 1.15;
+  }
+
+  .workspace {
+    margin-bottom: 10px;
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .section-heading {
+    margin-bottom: 8px;
+  }
+
+  .section-heading h2 {
+    font-size: 15px;
+  }
+
+  .format-label {
+    max-width: 135px;
+    font-size: 9px;
+  }
+
+  .dropzone {
+    min-height: 116px;
+    padding: 11px;
+    border-radius: 12px;
+  }
+
+  .upload-icon {
+    width: 32px;
+    height: 32px;
+    margin-bottom: 7px;
+    border-radius: 9px;
+  }
+
+  .upload-icon svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .drop-title {
+    font-size: 12px;
+  }
+
+  .drop-subtitle {
+    margin: 3px 0 6px;
+  }
+
+  .drop-hint {
+    margin-top: 6px;
+    font-size: 9px;
+  }
+
+  .button {
+    min-height: 35px;
+    padding-inline: 12px;
+    font-size: 11px;
+  }
+
+  .advanced-settings {
+    margin-top: 8px;
+  }
+
+  .advanced-settings summary {
+    min-height: 36px;
+    padding: 5px 2px 0;
+  }
+
+  .advanced-settings summary span {
+    display: none;
+  }
+
+  .settings-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding-top: 6px;
+  }
+
+  .setting-card {
+    padding: 9px;
+    border-radius: 9px;
+  }
+
+  .setting-title {
+    margin-bottom: 6px;
+    font-size: 9px;
+  }
+
+  .control {
+    min-height: 31px;
+    padding-inline: 7px;
+    font-size: 10px;
+  }
+
+  .inline-field {
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  .inline-field label,
+  .range-labels {
+    font-size: 8px;
+  }
+
+  .number-control {
+    width: 76px;
+    min-height: 29px;
+  }
+
+  .meter-fields {
+    gap: 5px;
+  }
+
+  .meter-fields .control {
+    width: 54px;
+  }
+
+  .range-control {
+    margin: 12px 0 6px;
+  }
+
+  .action-row {
+    align-items: center;
+    flex-direction: row;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .engine-note {
+    max-width: calc(100% - 148px);
+    gap: 6px;
+    font-size: 8px;
+    line-height: 1.35;
+  }
+
+  .action-row .button-primary {
+    width: auto;
+    min-width: 140px;
+    min-height: 38px;
+    flex: 0 0 auto;
+  }
+
+  .file-info {
+    gap: 8px;
+    margin-top: 8px;
+    padding: 8px;
+  }
+
+  .file-symbol {
+    width: 34px;
+    height: 32px;
+  }
+
+  .audio-preview {
+    margin-top: 6px;
+  }
+
+  .audio-preview audio {
+    height: 32px;
+  }
+
+  .progress-panel {
+    margin-top: 8px;
+    padding: 10px;
+  }
+
+  .progress-panel p {
+    margin-top: 6px;
+  }
+}
+
+/* Short mobile screens: keep the primary action above the fold. */
+@media (max-width: 600px) and (max-height: 650px) {
+  .app-shell {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .intro {
+    margin-bottom: 8px;
+  }
+
+  .intro h1 {
+    font-size: 24px;
+  }
+
+  .workspace {
+    padding: 11px;
+  }
+
+  .dropzone {
+    min-height: 94px;
+  }
+
+  .upload-icon {
+    width: 27px;
+    height: 27px;
+    margin-bottom: 4px;
+  }
+
+  .drop-hint {
+    margin-top: 4px;
+  }
+
+  .advanced-settings summary {
+    min-height: 32px;
+  }
+
+  .action-row {
+    margin-top: 6px;
+  }
+}
