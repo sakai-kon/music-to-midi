@@ -59,16 +59,18 @@ function setProgress(percent, title, message) {
   $("progressPercent").textContent = Math.round(percent) + "%";
   $("progressMessage").textContent = message;
   const bar = progressPanel.querySelector(".progress-track span");
-  bar.style.width = Math.max(2, Math.min(100, percent)) + "%";
-  bar.style.animation = "none";
+  const value = Math.max(0, Math.min(100, percent));
+  bar.style.width = Math.max(2, value) + "%";
+  progressPanel.querySelector(".progress-track")?.setAttribute("aria-valuenow", String(Math.round(value)));
 }
 
 function setBusy(busy) {
   isConverting = busy;
   convertButton.disabled = busy || !selectedFile;
-  $("heroSelectButton").disabled = busy;
   $("chooseFile").disabled = busy;
   $("removeFile").disabled = busy;
+  fileInput.disabled = busy;
+  dropzone.setAttribute("aria-busy", String(busy));
   $("convertButtonText").textContent = busy ? "解析しています..." : "MIDIに変換";
   if (busy) {
     progressPanel.classList.remove("hidden");
@@ -156,11 +158,15 @@ function clearFile() {
 }
 
 $("chooseFile").addEventListener("click", () => fileInput.click());
-$("heroSelectButton").addEventListener("click", () => fileInput.click());
 dropzone.addEventListener("click", (event) => {
   if (!event.target.closest("button")) fileInput.click();
 });
-fileInput.addEventListener("change", () => setFile(fileInput.files[0]));
+fileInput.addEventListener("change", () => {
+  const file = fileInput.files?.[0];
+  if (file) setFile(file);
+  // Reset so choosing the same file again still fires the change event.
+  fileInput.value = "";
+});
 $("removeFile").addEventListener("click", clearFile);
 
 ["dragenter", "dragover"].forEach((type) => {
@@ -792,15 +798,18 @@ function showResult(result) {
 
 async function convert() {
   if (!selectedFile || isConverting) return;
+  const fileToConvert = selectedFile;
   clearError();
   stopPlayback();
+  latestResult = null;
+  resultSection.classList.add("hidden");
   setBusy(true);
 
   try {
     setProgress(3, "音声ファイルを読み込んでいます", "ブラウザ内で音声を展開しています。");
     await new Promise((resolve) => requestAnimationFrame(resolve));
 
-    const { samples: rawSamples, duration } = await decodeAndResample(selectedFile);
+    const { samples: rawSamples, duration } = await decodeAndResample(fileToConvert);
     const samples = applyNoiseGate(rawSamples, Number($("noiseReduction").value));
     const sensitivity = Number($("sensitivity").value);
 
@@ -816,7 +825,7 @@ async function convert() {
       : detectTempo(samples);
     const numerator = Number($("timeSigNum").value);
     const denominator = Number($("timeSigDen").value);
-    const filename = safeStem(selectedFile.name) + ".mid";
+    const filename = safeStem(fileToConvert.name) + ".mid";
     const midiBlob = buildMidi(detectedNotes, bpm, numerator, denominator);
 
     latestResult = {
@@ -987,42 +996,3 @@ window.addEventListener("beforeunload", () => {
   if (selectedObjectUrl) URL.revokeObjectURL(selectedObjectUrl);
   if (audioContext && audioContext.state !== "closed") audioContext.close();
 });
-
-function setupScrollReveal() {
-  const elements = Array.from(document.querySelectorAll("[data-reveal]"));
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  if (!("IntersectionObserver" in window) || reducedMotion) {
-    elements.forEach((element) => element.classList.add("is-visible"));
-    return;
-  }
-
-  document.documentElement.classList.add("motion-ready");
-  const observer = new IntersectionObserver((entries, instance) => {
-    entries.forEach((entry) => {
-      if (entry.isIntersecting) {
-        entry.target.classList.add("is-visible");
-        instance.unobserve(entry.target);
-      }
-    });
-  }, {
-    threshold: 0.14,
-    rootMargin: "0px 0px -42px 0px"
-  });
-
-  elements.forEach((element, index) => {
-    element.style.setProperty("--reveal-delay", Math.min(index % 3, 2) * 85 + "ms");
-    observer.observe(element);
-  });
-}
-
-setupScrollReveal();
-
-fetch(MODEL_URL, { method: "HEAD" })
-  .then((response) => {
-    if (!response.ok) throw new Error("model is missing");
-    document.body.classList.add("app-ready");
-  })
-  .catch(() => {
-    setError("AIモデルを読み込めません。GitHub Pagesの公開設定か、モデルファイルの配置を確認してください。");
-  });
