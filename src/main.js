@@ -1,4 +1,5 @@
 import * as tf from "@tensorflow/tfjs";
+import { loadBasicPitchGraphModel } from "./model-storage.js";
 import { buildMidi, clamp, midiNoteName } from "./midi.js";
 import { getCanvasPixelRatio, getTimelineWidth, midiToFrequency, PREVIEW_TONES, velocityGain } from "./preview-audio.js";
 import {
@@ -396,7 +397,20 @@ async function ensureModel() {
     }
     await tf.ready();
 
-    const model = new BasicPitch(MODEL_URL);
+    const graphModel = await loadBasicPitchGraphModel(tf, MODEL_URL, (status) => {
+      if (status === "checking-cache") {
+        setProgress(7, "保存済みAIモデルを確認しています", "この端末のブラウザ内ストレージを確認しています。");
+      } else if (status === "downloading") {
+        setProgress(7, "AIモデルを初回ダウンロードしています", "取得したモデルは端末内に保存し、次回から再ダウンロードを避けます。");
+      } else if (status === "loaded-cache") {
+        setProgress(14, "端末に保存したAIモデルを読み込みました", "ネットワークからモデルを再取得せずに準備できました。");
+      } else if (status === "saved") {
+        setProgress(14, "AIモデルを端末に保存しました", "次回からは保存済みモデルを優先して読み込みます。");
+      } else if (status === "save-failed") {
+        setProgress(14, "AIモデルを読み込みました", "端末内保存を利用できませんでした。次回は再ダウンロードが必要になる場合があります。");
+      }
+    });
+    const model = new BasicPitch(Promise.resolve(graphModel));
     await model.model;
     pitchModel = model;
     return model;
