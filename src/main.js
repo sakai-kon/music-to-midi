@@ -1,6 +1,7 @@
 import * as tf from "@tensorflow/tfjs";
 import { loadBasicPitchGraphModel } from "./model-storage.js";
 import { buildMidi, clamp, midiNoteName } from "./midi.js";
+import { clipNotesToDuration, validateConversionSettings } from "./conversion-utils.js";
 import { getCanvasPixelRatio, getTimelineWidth, midiToFrequency, PREVIEW_TONES, velocityGain } from "./preview-audio.js";
 import {
   BasicPitch,
@@ -39,6 +40,9 @@ let activeVoices = [];
 let playbackBus = [];
 let playbackFrame = 0;
 let playbackStartAt = 0;
+let playbackMasterGain = null;
+let playbackWave = null;
+let playbackNextNoteIndex = 0;
 let pianoZoom = 1;
 let pianoLayout = null;
 let modelLoadPromise = null;
@@ -64,6 +68,13 @@ function setProgress(percent, title, message) {
   progressPanel.querySelector(".progress-track")?.setAttribute("aria-valuenow", String(Math.round(value)));
 }
 
+function syncAdvancedControls() {
+  const manualTempo = $("tempoMode").value === "manual";
+  document.querySelectorAll(".advanced-settings select, .advanced-settings input").forEach((control) => {
+    control.disabled = isConverting || (control.id === "bpmInput" && !manualTempo);
+  });
+}
+
 function setBusy(busy) {
   isConverting = busy;
   convertButton.disabled = busy || !selectedFile;
@@ -72,6 +83,7 @@ function setBusy(busy) {
   fileInput.disabled = busy;
   dropzone.setAttribute("aria-busy", String(busy));
   $("convertButtonText").textContent = busy ? "解析しています..." : "MIDIに変換";
+  syncAdvancedControls();
   if (busy) {
     progressPanel.classList.remove("hidden");
   } else {
@@ -194,9 +206,8 @@ $("sensitivity").addEventListener("input", () => {
 $("noiseReduction").addEventListener("input", () => {
   $("noiseValue").textContent = $("noiseReduction").value + "%";
 });
-$("tempoMode").addEventListener("change", () => {
-  $("bpmInput").disabled = $("tempoMode").value !== "manual";
-});
+$("tempoMode").addEventListener("change", syncAdvancedControls);
+syncAdvancedControls();
 
 async function readMediaDuration(file) {
   const objectUrl = URL.createObjectURL(file);
@@ -808,6 +819,22 @@ function showResult(result) {
 async function convert() {
   if (!selectedFile || isConverting) return;
   const fileToConvert = selectedFile;
+  let settings;
+  try {
+    settings = validateConversionSettings({
+      tempoMode: $("tempoMode").value,
+      bpm: $("bpmInput").value,
+      numerator: $("timeSigNum").value,
+      denominator: $("timeSigDen").value,
+      sensitivity: $("sensitivity").value,
+      noiseReduction: $("noiseReduction").value
+    });
+  } catch (error) {
+    clearError();
+    setError(error.message || "詳細設定を確認してください。");
+    return;
+  }
+
   clearError();
   stopPlayback();
   latestResult = null;
@@ -819,21 +846,19 @@ async function convert() {
     await new Promise((resolve) => requestAnimationFrame(resolve));
 
     const { samples: rawSamples, duration } = await decodeAndResample(fileToConvert);
-    const samples = applyNoiseGate(rawSamples, Number($("noiseReduction").value));
-    const sensitivity = Number($("sensitivity").value);
+    const samples = applyNoiseGate(rawSamples, settings.noiseReduction);
 
     setProgress(7, "AIモデルを準備しています", "Basic Pitchモデルを読み込んでいます。");
-    const detectedNotes = await transcribe(samples, sensitivity);
+    const rawDetectedNotes = await transcribe(samples, settings.sensitivity);
+    const detectedNotes = clipNotesToDuration(rawDetectedNotes, duration);
     if (!detectedNotes.length) {
       throw new Error("ノートを検出できませんでした。感度を上げるか、より音が明瞭な音源をお試しください。");
     }
 
-    const tempoMode = $("tempoMode").value;
-    const bpm = tempoMode === "manual"
-      ? clamp(Number($("bpmInput").value) || 120, 40, 240)
+    const bpm = settings.tempoMode === "manual"
+      ? settings.bpm
       : detectTempo(samples);
-    const numerator = Number($("timeSigNum").value);
-    const denominator = Number($("timeSigDen").value);
+    const { numerator, denominator } = settings;
     const filename = safeStem(fileToConvert.name) + ".mid";
     const midiBlob = buildMidi(detectedNotes, bpm, numerator, denominator);
 
@@ -870,6 +895,9 @@ function stopPlayback() {
   if (playbackFrame) window.cancelAnimationFrame(playbackFrame);
   playbackFrame = 0;
   playbackStartAt = 0;
+  playbackNextNoteIndex = 0;
+  playbackWave = null;
+  playbackMasterGain = null;
   for (const voice of activeVoices) {
     try { voice.oscillator.stop(); } catch {}
     try { voice.oscillator.disconnect(); } catch {}
@@ -882,23 +910,94 @@ function stopPlayback() {
   }
   playbackBus = [];
   clearPlayhead();
+  $("previewTone").disabled = false;
   $("playButton").disabled = !(latestResult?.notes?.length);
   $("stopButton").disabled = true;
 }
 
+function scheduleUpcomingNotes() {
+  if (!audioContext || !latestResult || !playbackWave || !playbackStartAt) return;
+  const notes = latestResult.notes;
+  const now = audioContext.currentTime;
+  const schedulingHorizon = now + 0.9;
+
+  while (playbackNextNoteIndex < notes.length) {
+    const note = notes[playbackNextNoteIndex];
+    const noteStart = Math.max(0, note.start);
+    const targetStart = playbackStartAt + noteStart;
+    if (targetStart > schedulingHorizon) break;
+    playbackNextNoteIndex += 1;
+
+    const targetEnd = playbackStartAt + Math.max(noteStart + 0.035, note.end);
+    if (targetEnd <= now + 0.01) continue;
+    const start = Math.max(targetStart, now + 0.01);
+    const end = Math.max(start + 0.025, targetEnd);
+    const frequency = midiToFrequency(note.pitchFloat ?? note.pitch);
+    const peak = Math.max(0.0005, velocityGain(clamp(note.velocity ?? 84, 0, 127)));
+    const attackEnd = start + Math.min(0.012, (end - start) * 0.24);
+    const decayEnd = Math.min(end - 0.015, start + 0.28);
+    const releaseStart = Math.max(attackEnd, decayEnd, end - 0.055);
+    const sustain = Math.max(0.0005, peak * 0.38);
+
+    const oscillator = audioContext.createOscillator();
+    oscillator.setPeriodicWave(playbackWave);
+    oscillator.frequency.setValueAtTime(frequency, start);
+
+    const filter = audioContext.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(Math.min(11000, 2300 + frequency * 6), start);
+    filter.Q.setValueAtTime(0.65, start);
+
+    const gain = audioContext.createGain();
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(peak, attackEnd);
+    if (decayEnd > attackEnd) gain.gain.exponentialRampToValueAtTime(sustain, decayEnd);
+    gain.gain.setValueAtTime(sustain, releaseStart);
+    gain.gain.exponentialRampToValueAtTime(0.0001, end + 0.085);
+
+    oscillator.connect(filter);
+    filter.connect(gain);
+    gain.connect(playbackMasterGain);
+    oscillator.onended = () => {
+      try { oscillator.disconnect(); } catch {}
+      try { filter.disconnect(); } catch {}
+      try { gain.disconnect(); } catch {}
+      activeVoices = activeVoices.filter((voice) => voice.oscillator !== oscillator);
+    };
+    oscillator.start(start);
+    oscillator.stop(end + 0.09);
+    activeVoices.push({ oscillator, filter, gain });
+  }
+}
+
 function updatePlaybackCursor() {
   if (!audioContext || !playbackStartAt || !latestResult) return;
-  const elapsed = audioContext.currentTime - playbackStartAt;
+  const elapsed = Math.max(0, audioContext.currentTime - playbackStartAt);
   if (elapsed >= latestResult.duration + 0.12) {
     stopPlayback();
     return;
   }
+
+  scheduleUpcomingNotes();
   drawPlayhead(elapsed);
+
+  if (pianoLayout) {
+    const cursorX = pianoLayout.left + Math.min(1, elapsed / pianoLayout.duration) * pianoLayout.plotWidth;
+    const visibleRight = pianoViewport.scrollLeft + pianoViewport.clientWidth;
+    if (cursorX > visibleRight - 44) {
+      pianoViewport.scrollLeft = Math.min(
+        pianoViewport.scrollWidth - pianoViewport.clientWidth,
+        Math.max(0, cursorX - pianoViewport.clientWidth * 0.72)
+      );
+    }
+  }
+
   playbackFrame = window.requestAnimationFrame(updatePlaybackCursor);
 }
 
 async function playPreview() {
   if (!latestResult?.notes?.length) return;
+  clearError();
   stopPlayback();
   try {
     const context = await getPlaybackContext();
@@ -914,59 +1013,21 @@ async function playPreview() {
     master.connect(compressor);
     compressor.connect(context.destination);
     playbackBus = [master, compressor];
+    playbackMasterGain = master;
 
     const partials = PREVIEW_TONES[$("previewTone").value] || PREVIEW_TONES.piano;
     const real = new Float32Array(partials.length + 1);
     const imaginary = new Float32Array(partials.length + 1);
     partials.forEach((amplitude, index) => { real[index + 1] = amplitude; });
-    const pianoWave = context.createPeriodicWave(real, imaginary);
-    const startAt = context.currentTime + 0.1;
-
-    for (const note of latestResult.notes.slice(0, 5000)) {
-      const noteStart = Math.max(0, note.start);
-      const noteEnd = Math.max(noteStart + 0.035, note.end);
-      const start = startAt + noteStart;
-      const end = startAt + noteEnd;
-      const frequency = midiToFrequency(note.pitchFloat ?? note.pitch);
-      const peak = Math.max(0.0005, velocityGain(clamp(note.velocity ?? 84, 0, 127)));
-      const attackEnd = start + Math.min(0.012, (end - start) * 0.24);
-      const decayEnd = Math.min(end - 0.015, start + 0.28);
-      const releaseStart = Math.max(attackEnd, decayEnd, end - 0.055);
-      const sustain = Math.max(0.0005, peak * 0.38);
-
-      const oscillator = context.createOscillator();
-      oscillator.setPeriodicWave(pianoWave);
-      oscillator.frequency.setValueAtTime(frequency, start);
-
-      const filter = context.createBiquadFilter();
-      filter.type = "lowpass";
-      filter.frequency.setValueAtTime(Math.min(11000, 2300 + frequency * 6), start);
-      filter.Q.setValueAtTime(0.65, start);
-
-      const gain = context.createGain();
-      gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(peak, attackEnd);
-      if (decayEnd > attackEnd) gain.gain.exponentialRampToValueAtTime(sustain, decayEnd);
-      gain.gain.setValueAtTime(sustain, releaseStart);
-      gain.gain.exponentialRampToValueAtTime(0.0001, end + 0.085);
-
-      oscillator.connect(filter);
-      filter.connect(gain);
-      gain.connect(master);
-      oscillator.start(start);
-      oscillator.stop(end + 0.09);
-      oscillator.onended = () => {
-        try { oscillator.disconnect(); } catch {}
-        try { filter.disconnect(); } catch {}
-        try { gain.disconnect(); } catch {}
-      };
-      activeVoices.push({ oscillator, filter, gain });
-    }
+    playbackWave = context.createPeriodicWave(real, imaginary);
+    playbackNextNoteIndex = 0;
+    playbackStartAt = context.currentTime + 0.1;
 
     pianoViewport.scrollLeft = 0;
     $("playButton").disabled = true;
+    $("previewTone").disabled = true;
     $("stopButton").disabled = false;
-    playbackStartAt = startAt;
+    scheduleUpcomingNotes();
     drawPlayhead(0);
     playbackFrame = window.requestAnimationFrame(updatePlaybackCursor);
   } catch (error) {
@@ -981,7 +1042,11 @@ $("zoomIn").addEventListener("click", () => changePianoZoom(pianoZoom * 1.35));
 $("zoomOut").addEventListener("click", () => changePianoZoom(pianoZoom / 1.35));
 $("zoomFit").addEventListener("click", () => changePianoZoom(pianoZoom, true));
 $("previewVolume").addEventListener("input", () => {
-  $("previewVolumeValue").textContent = $("previewVolume").value + "%";
+  const volume = clamp(Number($("previewVolume").value) / 100, 0, 1);
+  $("previewVolumeValue").textContent = Math.round(volume * 100) + "%";
+  if (playbackMasterGain && audioContext && audioContext.state !== "closed") {
+    playbackMasterGain.gain.setTargetAtTime(0.78 * volume, audioContext.currentTime, 0.02);
+  }
 });
 
 $("downloadButton").addEventListener("click", () => {
